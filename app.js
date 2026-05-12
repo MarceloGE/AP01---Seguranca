@@ -89,7 +89,6 @@ const exportBtn = document.querySelector("#exportBtn");
 const clearLogsBtn = document.querySelector("#clearLogsBtn");
 const resetBtn = document.querySelector("#resetBtn");
 const searchInput = document.querySelector("#search");
-const roleSelect = document.querySelector("#roleSelect");
 
 const sessionBadge = document.querySelector("#sessionBadge");
 const currentUserName = document.querySelector("#currentUserName");
@@ -182,7 +181,6 @@ function showApp(user) {
 
   currentUserName.textContent = user.name;
   currentUserDetails.textContent = `${user.email} | Perfil: ${user.role}`;
-  roleSelect.value = user.role;
 
   render();
 }
@@ -208,18 +206,6 @@ function logout() {
   showLogin();
 }
 
-function changeRole(newRole) {
-  const session = getSession();
-
-  if (!session) {
-    return;
-  }
-
-  session.role = newRole;
-  saveSession(session);
-  writeLog("PERFIL_ALTERADO", `Perfil ativo alterado manualmente para ${newRole}.`);
-  showApp(session);
-}
 
 function createOccurrence(event) {
   event.preventDefault();
@@ -283,6 +269,13 @@ function changeStatus(id, status) {
 }
 
 function exportEverything() {
+  const session = getSession();
+      if (!session || session.role !== "ADMIN") {
+        alert("Acesso negado, apenas administradores podem exportar dados.");
+        writeLog("ACESSO_NEGADO", "Tentativa de exportação por perfil não autorizado.");
+        return;
+    }
+
   const payload = {
     exportedAt: new Date().toISOString(),
     exportedBy: getSession(),
@@ -310,11 +303,22 @@ function exportEverything() {
 }
 
 function clearLogs() {
+  const session = getSession();
+  if (!session || session.role !== "ADMIN") {
+    alert("Acesso negado, apenas administradores podem limpar logs");
+    writeLog("ACESSO_NEGADO", "Tentativa de limpar logs por perfil não autorizado.");
+    return;
+  }
   saveAuditLogs([]);
   render();
 }
 
 function resetData() {
+  const session = getSession();
+  if (!session || session.role !== "ADMIN") {
+    alert("Acesso negado, apenas administradores podem restaurara dados.");
+    return;
+  }
   localStorage.setItem(STORAGE_KEYS.occurrences, JSON.stringify(INITIAL_OCCURRENCES));
   localStorage.setItem(STORAGE_KEYS.audit, JSON.stringify([]));
   localStorage.removeItem(STORAGE_KEYS.session);
@@ -325,7 +329,11 @@ function render() {
   const term = searchInput.value.toLowerCase();
   const occurrences = getOccurrences();
 
-  const filtered = occurrences.filter((item) => {
+  const session = getSession();
+  const visibleOccurrences = session && session.role === "ALUNO"
+    ? occurrences.filter(item => item.studentId === session.studentId) : occurrences;
+
+  const filtered = visibleOccurrences.filter((item) => {
     const content = JSON.stringify(item).toLowerCase();
     return content.includes(term);
   });
@@ -340,7 +348,7 @@ function render() {
         <strong>${item.studentName}</strong><br />
         <span class="muted-text">${item.studentId}</span>
       </td>
-      <td>${item.studentCpf}</td>
+      <td>${session && session.role === "ADMIN" ? item.studentCpf : "***.***.***-**"}</td>
       <td>
         ${item.studentEmail}<br />
         ${item.studentPhone}
@@ -350,13 +358,13 @@ function render() {
       <td>${item.status}</td>
       <td>
         <strong>Descrição:</strong> ${item.description}<br />
-        <strong>Obs. interna:</strong> ${item.internalNote}
+        ${session && session.role !== "ALUNO" ? `<strong>Obs. interna:</strong> ${item.internalNote}` : ""}
       </td>
       <td>
         <div class="row-actions">
-          <button class="btn secondary" onclick="changeStatus('${item.id}', 'Em análise')">Em análise</button>
-          <button class="btn secondary" onclick="changeStatus('${item.id}', 'Resolvida')">Resolver</button>
-          <button class="btn danger" onclick="deleteOccurrence('${item.id}')">Excluir</button>
+          ${session && session.role !== "ALUNO" ? `<button class="btn secondary" onclick="changeStatus('${item.id}', 'Em análise')">Em análise</button>` : ""}
+          ${session && session.role !== "ALUNO" ? `<button class="btn secondary" onclick="changeStatus('${item.id}', 'Resolvida')">Resolver</button>` : ""}
+          ${session && session.role === "ADMIN" ? `<button class="btn danger" onclick="deleteOccurrence('${item.id}')">Excluir</button>` : ""}
         </div>
       </td>
     </tr>
@@ -392,7 +400,6 @@ exportBtn.addEventListener("click", exportEverything);
 clearLogsBtn.addEventListener("click", clearLogs);
 resetBtn.addEventListener("click", resetData);
 searchInput.addEventListener("input", render);
-roleSelect.addEventListener("change", (event) => changeRole(event.target.value));
 
 window.deleteOccurrence = deleteOccurrence;
 window.changeStatus = changeStatus;
